@@ -15,7 +15,7 @@ Original Author:
 Additional Authors:
 - Nick Principe, Individual <nick@princi.pe>
 
-Version: 1.3
+Version: 1.4
 Version History:
     1.0 - Initial release
     1.1 - Added ability to specify one or more fields that contain timestamp info
