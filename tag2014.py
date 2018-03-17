@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015, EMC Corporation
 # Copyright (c) 2017, Standard Performance Evaluation Corporation
+# Copyright (c) 2018, Nick Principe
 #
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -74,7 +75,36 @@ SFLOW_CNTR_HEADERS = ['CounterType',
                       'ifOutDiscards',
                       'ifOutErrors',
                       'ifPromiscuousMode',
+                      'totalMiBperSecond',
                       ]
+SFLOW_CNTR_FIELD_RATE = [False, # CounterType
+                         False, # IP
+                         False, # Timestamp
+                         False, # ifIndex
+                         False, # ifType
+                         False, # ifSpeed
+                         False, # ifDirection
+                         False, # ifStatus
+                         True,  # ifInOctets
+                         True,  # ifInUcastPkts
+                         True,  # ifInMulticastPkts
+                         True,  # ifInBroadcastPkts
+                         True,  # ifInDiscards
+                         True,  # ifInErrors
+                         True,  # ifInUnknownProtos
+                         True,  # ifOutOctets
+                         True,  # ifOutUcastPkts
+                         True,  # ifOutMulticastPkts
+                         True,  # ifOutBroadcastPkts
+                         True,  # ifOutDiscards
+                         True,  # ifOutErrors
+                         False, # ifPromiscuousMode
+                        ]
+SFLOW_RECORD_TYPE_IDX = 0
+SFLOW_CNTR_IP_FIELD_IDX = 1
+SFLOW_CNTR_IF_FIELD_IDX = 3
+SFLOW_CNTR_INOCT_FIELD_IDX = 8
+SFLOW_CNTR_OUTOCT_FIELD_IDX = 15
 
 def usage():
     print(
@@ -120,9 +150,15 @@ def tagData(rd, wr):
     # keep track of current object for analyzer data, so we know
     # when to start over run numbering, since we reached a new object
     curobj = None
+    # keep track of last data point for sflow data to calculate rates
+    # note: this is a nested dict: IP => ifIndex => field => val => last_value
+    #                                                             => ts  => last_timestamp
+    sflowLastData = {}
     for row in rd:
         ts = None
-        if (fileType == "c" and len(tsCols) == 0):
+        if fileType == "s" and not re.match("CNTR", row[SFLOW_RECORD_TYPE_IDX]):
+            continue # skip all processing for non-CNTR types in sflowtool output
+        if (fileType == "c" or fileType == "s") and len(tsCols) == 0:
             # we need to find the ts column(s)
             for i in range(0, len(row)):
                 if reFullTimestamp.match(row[i]):
@@ -157,7 +193,7 @@ def tagData(rd, wr):
                         phaseIdx = 0
                         curobj = row[ana_obj_col]
                 ts = parser.parse(row[ana_ts_col])
-            elif fileType == "c":
+            elif fileType == "c" or fileType == "s":
                 timestampText = ""
                 for field in tsCols:
                     timestampText += row[field]
@@ -174,6 +210,43 @@ def tagData(rd, wr):
         if timeShift != None:
             ts += timeShift
 
+        all_rates_good = True
+        if fileType == "s":
+            if len(row) != len(SFLOW_CNTR_FIELD_RATE):
+                print("Unexpected number of fields in sflowtool CNTR row! Skipping row")
+                sflowLastData = {} # we lose our baseline data to compute rates if we skip
+                continue
+            sflowIP = row[SFLOW_CNTR_IP_FIELD_IDX]
+            sflowIF = row[SFLOW_CNTR_IF_FIELD_IDX]
+            if sflowIP not in sflowLastData:
+                sflowLastData[sflowIP] = {}
+            if sflowIF not in sflowLastData[sflowIP]:
+                sflowLastData[sflowIP][sflowIF] = {}
+            for idx in range(0,len(SFLOW_CNTR_FIELD_RATE)):
+                if SFLOW_CNTR_FIELD_RATE[idx] is True:
+                    if idx not in sflowLastData[sflowIP][sflowIF]:
+                        sflowLastData[sflowIP][sflowIF][idx] = {}
+                    try:
+                        new_val = int(row[idx])
+                    except ValueError as ve:
+                        print('Encountered invalid counter value "{}", invalidating that counter'.format(row[idx]))
+                        all_rates_good = False
+                        sflowLastData[sflowIP][sflowIF][idx] = {}
+                        row[idx] = None
+                        continue
+                    if ('val' in sflowLastData[sflowIP][sflowIF][idx]
+                        and 'ts' in sflowLastData[sflowIP][sflowIF][idx]):
+                        old_val = sflowLastData[sflowIP][sflowIF][idx]['val']
+                        old_ts = sflowLastData[sflowIP][sflowIF][idx]['ts']
+                        cur_rate = (new_val - old_val) / (ts - old_ts).total_seconds()
+                        row[idx] = cur_rate
+                    else:
+                        all_rates_good = False
+                        row[idx] = None
+                    sflowLastData[sflowIP][sflowIF][idx]['val'] = new_val
+                    sflowLastData[sflowIP][sflowIF][idx]['ts'] = ts
+
+
         iter_run = -1
         iter_phase = "error"
         # Now we have the current timestamp of the data.
@@ -188,10 +261,18 @@ def tagData(rd, wr):
         iter_run = runNum[phaseIdx]
         iter_phase = labels[phaseIdx]
 
+        if fileType == "s":
+            totalMibs = None
+            if (row[SFLOW_CNTR_INOCT_FIELD_IDX] is not None 
+                    and row[SFLOW_CNTR_OUTOCT_FIELD_IDX] is not None):
+                totalMibs = (row[SFLOW_CNTR_INOCT_FIELD_IDX] + 
+                             row[SFLOW_CNTR_OUTOCT_FIELD_IDX]) / 1024 / 1024
+            row.append(totalMibs)
+
         # Add the tag info
         row.insert(0, iter_phase)
         row.insert(0, iter_run)
-
+                
         # Write out the line
         if restrictedOutput:
             if printWarmup and iter_phase == PHASE_LABELS[3]:
@@ -405,7 +486,7 @@ else:
             open(outputFile, mode="w", newline='') as outfile:
         rdr = None
         wrt = None
-        if (fileType == "a") or (fileType == "c"):
+        if (fileType == "a") or (fileType == "c") or (fileType == "s"):
             rdr = csv.reader(infile, delimiter=',', quotechar='"')
         assert rdr != None, "Unhandled file type"
         wrt = csv.writer(outfile, delimiter=',', quotechar='"',
