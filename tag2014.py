@@ -52,13 +52,37 @@ PHASE_LABELS = ['00_PRE_TEST',
                 '06_POST',
                 ]
 
+SFLOW_CNTR_HEADERS = ['CounterType',
+                      'IP',
+                      'Timestamp',
+                      'ifIndex',
+                      'ifType',
+                      'ifSpeed',
+                      'ifDirection', # 0=unknown, 1=full-duplex, 2=half-duplex, 3=in, 4=out
+                      'ifStatus', #bit0: (ifAdminStatus, 0=down, 1=up) bit1: (ifOperStatus, 0=down, 1=up)
+                      'ifInOctets',
+                      'ifInUcastPkts',
+                      'ifInMulticastPkts',
+                      'ifInBroadcastPkts',
+                      'ifInDiscards',
+                      'ifInErrors',
+                      'ifInUnknownProtos',
+                      'ifOutOctets',
+                      'ifOutUcastPkts',
+                      'ifOutMulticastPkts',
+                      'ifOutBroadcastPkts',
+                      'ifOutDiscards',
+                      'ifOutErrors',
+                      'ifPromiscuousMode',
+                      ]
 
 def usage():
     print(
-        "USAGE: tag2014.py {-a|-c} [-f ts_col ... ] [-m] [-r] [-n] -i in_file -l sfslog "
+        "USAGE: tag2014.py {-a|-c|-s} [-f ts_col ... ] [-m] [-r] [-n] -i in_file -l sfslog "
         "-o out_file [-t time_shift]")
     print("     -a : Analyzer data (CSV data produced by Unisphere Analyzer)")
     print("     -c : CSV data")
+    print("     -s : Sflowtool data")
     print()
     print("     -f ts_col : field(s) that contains timestamp information")
     print()
@@ -75,15 +99,19 @@ def usage():
 
 def tagData(rd, wr):
     reFullTimestamp = re.compile(
-        '^\s*\d{1,4}[/\-.]\d{1,4}[/\-.]\d{1,4},?\s+\d{1,2}[:.]\d{1,2}([:.]\d{1,2})?\s*([AP]M)?(.+)$')
+        '^\s*\d{1,4}[/\-.]\d{1,4}[/\-.]\d{1,4}[T,]?\s+\d{1,2}[:.]\d{1,2}([:.]\d{1,2})?\s*([AP]M)?(.+)$')
     reDatestamp = re.compile('^\s*\d{1,4}[/\-.]\d{1,4}[/\-.]\d{1,4}(.+)$')
+    reIPv4Addr = re.compile('^\s*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s*$')
     reTimestamp = re.compile(
         '^\s*\d{1,2}[:.]\d{1,2}[:.]\d{1,2}\s*([AP]M)?(.+)$')
     datestampsFound = 0
     timestampsFound = 0
     foundFullTimestamp = 0
     # handle the header
-    header = next(rd)
+    if fileType == "s":
+        header = SFLOW_CNTR_HEADERS
+    else:
+        header = next(rd)
     header.insert(0, "Phase")
     header.insert(0, "Run")
     wr.writerow(header)
@@ -103,12 +131,12 @@ def tagData(rd, wr):
                         i), file=sys.stderr)
                     foundFullTimestamp = 1
                     break  # only discover one full timestamp
-                elif datestampsFound == 0 and reDatestamp.match(row[i]):
+                elif datestampsFound == 0 and reDatestamp.match(row[i]) and not reIPv4Addr.match(row[i]):
                     tsCols.append(i)
                     print(
                         "Discovered a date-only timestamp field at index {0}".format(i), file=sys.stderr)
                     datestampsFound += 1
-                elif timestampsFound == 0 and reTimestamp.match(row[i]):
+                elif timestampsFound == 0 and reTimestamp.match(row[i]) and not reIPv4Addr.match(row[i]):
                     tsCols.append(i)
                     print(
                         "Discovered a time-only timestamp field at index {0}".format(i), file=sys.stderr)
@@ -197,7 +225,7 @@ times = list()
 
 # Getopt and argument parsing
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "acf:i:l:o:t:wrn")
+    opts, args = getopt.getopt(sys.argv[1:], "acsf:i:l:o:t:wrn")
 except getopt.GetoptError as err:
     print(err)
     usage()
@@ -218,6 +246,13 @@ for o, a in opts:
             sys.exit(2)
         else:
             fileType = "c"
+    elif o == "-s":
+        if fileType:
+            print("Can only specify one file format type")
+            usage()
+            sys.exit(2)
+        else:
+            fileType = "s"
     elif o == "-i":
         if os.path.isfile(a):
             dataFile = a
