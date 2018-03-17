@@ -108,7 +108,8 @@ SFLOW_CNTR_OUTOCT_FIELD_IDX = 15
 
 def usage():
     print(
-        "USAGE: tag2014.py {-a|-c|-s} [-f ts_col ... ] [-m] [-r] [-n] -i in_file -l sfslog "
+        "USAGE: tag2014.py {-a|-c|-s} [-f ts_col ... ] [-m] [-r] [-n] [-e] "
+        "-i in_file -l sfslog "
         "-o out_file [-t time_shift]")
     print("     -a : Analyzer data (CSV data produced by Unisphere Analyzer)")
     print("     -c : CSV data")
@@ -119,6 +120,8 @@ def usage():
     print("     -m : restrict output, include WARMUP data")
     print("     -r : restrict output, include RUN data")
     print("     -n : restrict output, include RUN_TAIL data")
+    print()
+    print("     -e : combine RUN and RUN_TAIL into RUN")
     print()
     print("     -i in_file  : input data file")
     print("     -l sfslog   : sfslog file")
@@ -297,6 +300,7 @@ restrictedOutput = False
 printWarmup = False
 printRun = False
 printRunTail = False
+combineRunAndTail = False
 
 tsCols = list()
 
@@ -306,7 +310,7 @@ times = list()
 
 # Getopt and argument parsing
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "acsf:i:l:o:t:wrn")
+    opts, args = getopt.getopt(sys.argv[1:], "acsf:i:l:o:t:wrne")
 except getopt.GetoptError as err:
     print(err)
     usage()
@@ -365,6 +369,8 @@ for o, a in opts:
     elif o == "-n":
         restrictedOutput = True
         printRunTail = True
+    elif o == "-e":
+        combineRunAndTail = True
     else:
         assert False, "unhandled option"
 
@@ -436,7 +442,7 @@ with open(sfslogFile, mode="r", newline='') as sfslog:
             except ValueError:
                 print('Bad date: %s' % linematch.group(1))
         linematch = reRunToRunTail.match(logline)
-        if linematch:
+        if linematch and not combineRunAndTail:
             try:
                 date = parser.parse(linematch.group(1))
                 times.append(date)
