@@ -17,7 +17,7 @@
 # ------------------------------------------------------------------------------
 # Original Author: Nick Principe, EMC Corporation <nick.principe@emc.com>
 # Additional Authors: Nick Principe, Individual <nick@princi.pe>
-# Version 1.4
+# Version 1.5
 # ------------------------------------------------------------------------------
 # Version History:
 # ----------------
@@ -33,6 +33,13 @@
 #       probe, environmental probe, and sflow collector formats
 # 1.4 - Added an optional comma to full timestamp detection field for a
 #       particularly interesting edge case
+# 1.5 - Added -s support for sflowtool data that includes an ISO 8601-ish
+#       timestamp as I have proposed in github.com/sflow/sflowtool/pull/16
+#     - The fork branch for this PR can be downloaded/cloned from:
+#       github.com/powernap/sflowtool/tree/csv-timestamp/
+#     - In -s mode, appropriate sflow columns are converted to rates
+#     - Note that in -s mode, only CNTR data is processed. FLOW data is discarded
+#     - Added -e mode to combine RUN and RUN_TAIL phases into a single RUN phase
 
 import getopt
 import sys

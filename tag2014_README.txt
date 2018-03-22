@@ -15,7 +15,7 @@ Original Author:
 Additional Authors:
 - Nick Principe, Individual <nick@princi.pe>
 
-Version: 1.4
+Version: 1.5
 Version History:
     1.0 - Initial release
     1.1 - Added ability to specify one or more fields that contain timestamp info
@@ -29,16 +29,26 @@ Version History:
           power probe, environmental probe, and sflow collector formats
     1.4 - Added an optional comma after the date in search pattern for combined
           datetime field to cover a particularly interesting edge case
+    1.5 - Added -s support for sflowtool data that includes an ISO 8601-ish
+          timestamp as I have proposed in github.com/sflow/sflowtool/pull/16
+        - The fork branch for this PR can be downloaded/cloned from:
+          github.com/powernap/sflowtool/tree/csv-timestamp/
+        - In -s mode, appropriate sflow columns are converted to rates
+        - Note that in -s mode, only CNTR data is processed. FLOW data is discarded
+        - Added -e mode to combine RUN and RUN_TAIL phases into a single RUN phase
 
-USAGE: tag2014.py {-a|-c} [-f ts_col ... ] [-m] [-r] [-n] -i in_file -l sfslog -o out_file [-t time_shift]
+USAGE: tag2014.py {-a|-c|-s} [-f ts_col ... ] [-m] [-r] [-n] [-e] -i in_file -l sfslog -o out_file [-t time_shift]
      -a : Analyzer data (CSV data produced by Unisphere Analyzer)
      -c : CSV data
+     -s : Sflowtool data
 
      -f ts_col : field(s) that contains timestamp information
 
      -m : restrict output, include WARMUP data
      -r : restrict output, include RUN data
      -n : restrict output, include RUN_TAIL data
+
+     -e : combine RUN and RUN_TAIL into RUN
 
      -i in_file  : input data file
      -l sfslog   : sfslog file
@@ -52,6 +62,11 @@ Helpful hints:
 - This script is only useful with data logged in conjunction with a SPEC SFS(tm)
   2014 benchmark run. For more info about SPEC SFS(tm) 2014, see
   http://www.spec.org/sfs2014/
+
+Notes:
+- As of version 1.5, the -s support could use some more testing. Please report
+  any issues to Nick Principe at nick@princi.pe or via github at 
+  https://github.com/powernap/tag2014
 
 License:
 This script is licensed under the terms of the ISC license.
