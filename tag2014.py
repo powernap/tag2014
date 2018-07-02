@@ -17,7 +17,7 @@
 # ------------------------------------------------------------------------------
 # Original Author: Nick Principe, EMC Corporation <nick.principe@emc.com>
 # Additional Authors: Nick Principe, Individual <nick@princi.pe>
-# Version 1.5
+# Version 1.6
 # ------------------------------------------------------------------------------
 # Version History:
 # ----------------
@@ -40,6 +40,11 @@
 #     - In -s mode, appropriate sflow columns are converted to rates
 #     - Note that in -s mode, only CNTR data is processed. FLOW data is discarded
 #     - Added -e mode to combine RUN and RUN_TAIL phases into a single RUN phase
+# 1.6 - Added -p support, similar to -a, but allows specifying the object name 
+#       column for a pivoted CSV with multiple identical timestamps, allowing 
+#       for a table-like output
+#     - Fixed a bug where -s mode did not have output setup for STDOUT
+#     - Fixed several areas where assumptions were made about None comparisons
 
 import getopt
 import sys
@@ -115,12 +120,14 @@ SFLOW_CNTR_OUTOCT_FIELD_IDX = 15
 
 def usage():
     print(
-        "USAGE: tag2014.py {-a|-c|-s} [-f ts_col ... ] [-m] [-r] [-n] [-e] "
+        "USAGE: tag2014.py {-a|-c|-s|-p obj_col} [-f ts_col ... ] [-m] [-r] [-n] [-e] "
         "-i in_file -l sfslog "
         "-o out_file [-t time_shift]")
-    print("     -a : Analyzer data (CSV data produced by Unisphere Analyzer)")
-    print("     -c : CSV data")
-    print("     -s : Sflowtool data")
+    print("     -a         : Analyzer data (CSV data produced by Unisphere Analyzer)")
+    print("     -c         : CSV data")
+    print("     -s         : Sflowtool data")
+    print("     -p obj_col : Single-pivoted CSV output, with an object column at ")
+    print("                  obj_col (0-index)")
     print()
     print("     -f ts_col : field(s) that contains timestamp information")
     print()
@@ -168,7 +175,7 @@ def tagData(rd, wr):
         ts = None
         if fileType == "s" and not re.match("CNTR", row[SFLOW_RECORD_TYPE_IDX]):
             continue # skip all processing for non-CNTR types in sflowtool output
-        if (fileType == "c" or fileType == "s") and len(tsCols) == 0:
+        if (fileType == "c" or fileType == "s" or fileType == "p") and len(tsCols) == 0:
             # we need to find the ts column(s)
             for i in range(0, len(row)):
                 if reFullTimestamp.match(row[i]):
@@ -209,6 +216,18 @@ def tagData(rd, wr):
                     timestampText += row[field]
                     timestampText += " "
                 ts = parser.parse(timestampText)
+            elif fileType == "p":
+                if curobj == None:
+                    curobj = row[obj_col]
+                else:
+                    if curobj != row[obj_col]:
+                        phaseIdx = 0
+                        curobj = row[obj_col]
+                timestampText = ""
+                for field in tsCols:
+                    timestampText += row[field]
+                    timestampText += " "
+                ts = parser.parse(timestampText)
             else:
                 assert False, "unhandled file type"
         except ValueError:
@@ -217,7 +236,7 @@ def tagData(rd, wr):
             continue  # skip... but this is indicative of bad data format
 
         # This is where we hack time like Kung Fury
-        if timeShift != None:
+        if timeShift is not None:
             ts += timeShift
 
         all_rates_good = True
@@ -300,6 +319,7 @@ sfslogFile = None
 outputFile = None
 fileType = None
 timeShift = None
+obj_col = None
 # analyzer columns
 ana_ts_col = 1
 ana_obj_col = 0
@@ -317,7 +337,7 @@ times = list()
 
 # Getopt and argument parsing
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "acsf:i:l:o:t:wrne")
+    opts, args = getopt.getopt(sys.argv[1:], "acsp:f:i:l:o:t:wrne")
 except getopt.GetoptError as err:
     print(err)
     usage()
@@ -325,26 +345,38 @@ except getopt.GetoptError as err:
 
 for o, a in opts:
     if o == "-a":
-        if fileType:
+        if fileType is not None:
             print("Can only specify one file format type")
             usage()
             sys.exit(2)
         else:
             fileType = "a"
     elif o == "-c":
-        if fileType:
+        if fileType is not None:
             print("Can only specify one file format type")
             usage()
             sys.exit(2)
         else:
             fileType = "c"
     elif o == "-s":
-        if fileType:
+        if fileType is not None:
             print("Can only specify one file format type")
             usage()
             sys.exit(2)
         else:
             fileType = "s"
+    elif o == "-p":
+        if fileType is not None:
+            print("Can only specify one file format type")
+            usage()
+            sys.exit(2)
+        else:
+            try:
+                obj_col = int(a)
+                fileType = "p"
+            except ValueError as err:
+                print("Unable to parse obj_col string: ", err)
+                sys.exit(3)
     elif o == "-i":
         if os.path.isfile(a):
             dataFile = a
@@ -390,7 +422,7 @@ if sfslogFile == None:
     usage()
     sys.exit(2)
 if fileType == None:
-    print("Must specify a file type (-a or -c)")
+    print("Must specify a file type (-a, -c, -s, or -p)")
     usage()
     sys.exit(2)
 if timeShift != None:
@@ -409,6 +441,9 @@ reWarmupToRun = re.compile('^\s*(.+) Starting RUN phase.*$')
 reRunToRunTail = re.compile('^\s*(.+) Run 90 percent complete.*$')
 reRunTailToPost = re.compile('^\s*Tests finished: (.+)$')
 rePostToPre = re.compile('^<<< (.+): Starting.*$')
+
+# setup for pivoted object types
+assert obj_col is not None
 
 # initialize the run label and run number lists with values
 labels.append(PHASE_LABELS[0])  # 00_PRE_TEST
@@ -486,7 +521,7 @@ if (outputFile == None):
     with open(dataFile, mode="r", newline='') as infile:
         rdr = None
         wrt = None
-        if (fileType == "a") or (fileType == "c"):
+        if (fileType == "a") or (fileType == "c") or (fileType == "s") or (fileType == "p"):
             rdr = csv.reader(infile, delimiter=',', quotechar='"')
         assert rdr != None, "Unhandled file type"
         wrt = csv.writer(sys.stdout, delimiter=',',
@@ -499,7 +534,7 @@ else:
             open(outputFile, mode="w", newline='') as outfile:
         rdr = None
         wrt = None
-        if (fileType == "a") or (fileType == "c") or (fileType == "s"):
+        if (fileType == "a") or (fileType == "c") or (fileType == "s") or (fileType == "p"):
             rdr = csv.reader(infile, delimiter=',', quotechar='"')
         assert rdr != None, "Unhandled file type"
         wrt = csv.writer(outfile, delimiter=',', quotechar='"',
