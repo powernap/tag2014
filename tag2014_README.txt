@@ -15,7 +15,7 @@ Original Author:
 Additional Authors:
 - Nick Principe, Individual <nick@princi.pe>
 
-Version: 1.5
+Version: 1.6
 Version History:
     1.0 - Initial release
     1.1 - Added ability to specify one or more fields that contain timestamp info
@@ -36,11 +36,20 @@ Version History:
         - In -s mode, appropriate sflow columns are converted to rates
         - Note that in -s mode, only CNTR data is processed. FLOW data is discarded
         - Added -e mode to combine RUN and RUN_TAIL phases into a single RUN phase
+    1.6 - Added -p support, similar to -a, but allows specifying the object name 
+          column for a pivoted CSV with multiple identical timestamps, allowing 
+          for a table-like output
+        - Fixed a bug where -s mode did not have output setup for STDOUT
+        - Fixed several areas where assumptions were made about None comparisons
 
-USAGE: tag2014.py {-a|-c|-s} [-f ts_col ... ] [-m] [-r] [-n] [-e] -i in_file -l sfslog -o out_file [-t time_shift]
-     -a : Analyzer data (CSV data produced by Unisphere Analyzer)
-     -c : CSV data
-     -s : Sflowtool data
+
+USAGE: tag2014.py {-a|-c|-s|-p obj_col} [-f ts_col ... ] [-m] [-r] [-n] [-e] -i in_file -l sfslog -o out_file [-t time_shift]
+     -a         : Analyzer data (CSV data produced by Unisphere Analyzer)
+     -c         : CSV data
+     -s         : Sflowtool data
+     -p obj_col : Single-pivoted CSV output, with an object column
+                  obj_col (0-index)
+
 
      -f ts_col : field(s) that contains timestamp information
 
@@ -64,7 +73,7 @@ Helpful hints:
   http://www.spec.org/sfs2014/
 
 Notes:
-- As of version 1.5, the -s support could use some more testing. Please report
+- As of version 1.6, the -s support could use some more testing. Please report
   any issues to Nick Principe at nick@princi.pe or via github at 
   https://github.com/powernap/tag2014
 
